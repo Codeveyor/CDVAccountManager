@@ -272,6 +272,7 @@ SYNTHESIZE_SINGLETON_FOR_CLASS(CDVAccountManager)
     }];
 }
 
+//TODO: implement this method to work correctly(right permissions)
 - (void)facebookUserImages
 {
     ACAccountStore *accountStore = [ACAccountStore new];
