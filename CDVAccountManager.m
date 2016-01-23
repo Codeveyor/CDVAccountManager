@@ -100,7 +100,7 @@ SYNTHESIZE_SINGLETON_FOR_CLASS(CDVAccountManager)
             }
         }];
         
-        completionBlock([contactsArray copy]);
+        completionBlock([[self sortMembersArrayByFirstName:contactsArray] copy]);
     }];
 }
 
@@ -468,6 +468,14 @@ SYNTHESIZE_SINGLETON_FOR_CLASS(CDVAccountManager)
                                        }
                                    }];
     
+}
+
+- (NSArray *)sortMembersArrayByFirstName:(NSArray *)membersArray
+{
+    NSSortDescriptor *sortDescriptor = [NSSortDescriptor sortDescriptorWithKey:kFirstNamePropertyName
+                                                                     ascending:YES];
+    
+    return [membersArray sortedArrayUsingDescriptors:@[sortDescriptor]];
 }
 
 @end
