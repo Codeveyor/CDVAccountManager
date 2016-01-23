@@ -9,6 +9,9 @@
 #import "CDVAccountManager.h"
 #import "SynthesizeSingleton.h"
 
+#import <FBSDKCoreKit/FBSDKCoreKit.h>
+#import <FBSDKLoginKit/FBSDKLoginKit.h>
+
 @import Social;
 @import Accounts;
 @import Contacts;
@@ -134,7 +137,7 @@ SYNTHESIZE_SINGLETON_FOR_CLASS(CDVAccountManager)
 
 #pragma mark - Facebook Social Framework
 
-- (void)facebookUserWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock
+- (void)facebookSocialUserWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock
 {
     ACAccountStore *accountStore = [ACAccountStore new];
     ACAccountType *facebookTypeAccount = [accountStore accountTypeWithAccountTypeIdentifier:ACAccountTypeIdentifierFacebook];
@@ -223,7 +226,7 @@ SYNTHESIZE_SINGLETON_FOR_CLASS(CDVAccountManager)
     }];
 }
 
-- (void)facebookFriendsListFromSocialFrameworkWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock
+- (void)facebookSocialFriendsListWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock
 {
     ACAccountStore *accountStore = [ACAccountStore new];
     ACAccountType *facebookTypeAccount = [accountStore accountTypeWithAccountTypeIdentifier:ACAccountTypeIdentifierFacebook];
@@ -318,6 +321,153 @@ SYNTHESIZE_SINGLETON_FOR_CLASS(CDVAccountManager)
             NSLog(@"Facebook Social grant error:%@", error);
         }
     }];
+}
+
+#pragma mark - Facebook SDK
+
+- (void)facebookSDKUserWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock
+{
+    __weak typeof(self) weakSelf = self;
+    [self requestPermissions:@[@"email", @"public_profile"]
+             completionBlock:^(BOOL success, NSDictionary *dataDictionary, NSError *error) {
+                 
+                 if (!error)
+                 {
+                     [[[FBSDKGraphRequest alloc]initWithGraphPath:@"me"
+                                                       parameters:@{@"fields":@"email, name, link, birthday"}]
+                      startWithCompletionHandler:^(FBSDKGraphRequestConnection *connection, id responseDictionary, NSError *graphRequestError) {
+                          
+                          if(!graphRequestError)
+                          {
+                              // dictionary to post to backend
+                              NSMutableDictionary *postUserDictionary = [NSMutableDictionary dictionary];
+                              [postUserDictionary setValue:responseDictionary[kEmailURLPropertyName]
+                                                    forKey:kEmailURLPropertyName];
+                              NSArray *namesArray = [responseDictionary[kNamePropertyName]
+                                                     componentsSeparatedByString:@" "];
+                              if ([namesArray[0] length] > 0)
+                              {
+                                  [postUserDictionary setValue:namesArray[0]
+                                                        forKey:kFirstNameURLPropertyName];
+                              }
+                              if (namesArray[1])
+                              {
+                                  [postUserDictionary setValue:namesArray[1]
+                                                        forKey:kLastNameURLPropertyName];
+                              }
+                              [postUserDictionary setValue:[NSString stringWithFormat:@"%d", kFacebookID]
+                                                    forKey:kNetworkIDURLPropertyName];
+                              [postUserDictionary setValue:responseDictionary[kLinkURLPropertyName]
+                                                    forKey:kNetworkReferenceURLPropertyName];
+                              QVTSocialDB *social = [weakSelf.databaseManager socialNetworkForValue:kFacebookID];
+                              [postUserDictionary setValue:social
+                                                    forKey:kSocialPropertyName];
+                              
+                              NSString *URLString = [NSString stringWithFormat:@"http://graph.facebook.com/%@/picture?type=square", responseDictionary[kIDURLPropertyName]];
+                              
+                              [weakSelf.requestManager getImageFromURLString:URLString
+                                                                successBlock:^(BOOL success, UIImage *image, NSError *getImageError) {
+                                                                    
+                                                                    if (success)
+                                                                    {
+                                                                        [weakSelf.requestManager postUserFromSocialsDictionary:[postUserDictionary copy]
+                                                                                                                         image:image
+                                                                                                              socialDictionary:responseDictionary
+                                                                                                                  successBlock:^(BOOL success, NSDictionary *dataDictionary, NSError *postUserError) {
+                                                                                                                      
+                                                                                                                      if (success)
+                                                                                                                      {
+                                                                                                                          [weakSelf.databaseManager saveUserFromSocialRetreivedDictionary:dataDictionary
+                                                                                                                                                                         socialDictionary:[postUserDictionary copy]
+                                                                                                                                                                              avatarImage:image];
+                                                                                                                          completionBlock(YES, nil, nil);
+                                                                                                                      }
+                                                                                                                      else
+                                                                                                                      {
+                                                                                                                          completionBlock(NO, nil, postUserError);
+                                                                                                                      }
+                                                                                                                  }];
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        completionBlock(NO, nil, getImageError);
+                                                                    }
+                                                                }];
+                          }
+                          else
+                          {
+                              completionBlock(NO, nil, graphRequestError);
+                          }
+                      }];
+                 }
+                 else
+                 {
+                     completionBlock(NO, nil, error);
+                 }
+             }];
+}
+
+- (void)facebookSDKFriendsListWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock
+{
+    [self requestPermissions:@[@"user_friends"]
+             completionBlock:^(BOOL success, NSDictionary *dataDictionary, NSError *error) {
+                 
+                 if (!error)
+                 {
+                     [[[FBSDKGraphRequest alloc]initWithGraphPath:@"me/friends"
+                                                       parameters:@{@"fields":@"email, name, picture"}]
+                      startWithCompletionHandler:^(FBSDKGraphRequestConnection *connection, id responseDictionary, NSError *graphRequestError) {
+                          
+                          if(!graphRequestError)
+                          {
+                              completionBlock(YES, responseDictionary, nil);
+                          }
+                          else
+                          {
+                              completionBlock(NO, nil, graphRequestError);
+                          }
+                      }];
+                 }
+                 else
+                 {
+                     completionBlock(NO, nil, error);
+                 }
+             }];
+}
+
+#pragma mark - Utils
+
+- (void)requestPermissions:(NSArray *)permissionsArray
+           completionBlock:(AccountManagerCompletionBlock)completionBlock
+{
+    FBSDKLoginManager *loginManager = [FBSDKLoginManager new];
+    loginManager.loginBehavior = FBSDKLoginBehaviorSystemAccount;
+    [loginManager logInWithReadPermissions:permissionsArray
+                        fromViewController:nil
+                                   handler:^(FBSDKLoginManagerLoginResult *result, NSError *error) {
+                                       
+                                       if (error)
+                                       {
+                                           completionBlock(NO, nil, error);
+                                       }
+                                       else if (result.isCancelled)
+                                       {
+                                           NSMutableDictionary *userInfo = [NSMutableDictionary dictionary];
+                                           [userInfo setValue:@"FB auth was cancelled"
+                                                       forKey:NSLocalizedDescriptionKey];
+                                           [userInfo setValue:@"FB auth was cancelled"
+                                                       forKey:NSLocalizedFailureReasonErrorKey];
+                                           NSError *cancelledError = [[NSError alloc]initWithDomain:@"FB auth was cancelled"
+                                                                                               code:kFacebookCancelledLogin
+                                                                                           userInfo:userInfo];
+                                           completionBlock(NO, nil, cancelledError);
+                                       }
+                                       else
+                                       {
+                                           completionBlock(YES, nil, error);
+                                       }
+                                   }];
+    
 }
 
 @end

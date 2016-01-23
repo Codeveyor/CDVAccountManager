@@ -18,9 +18,13 @@ typedef void(^ContactsListCompletionBlock)(NSArray *contactsList);
 /// Contacts - call for iOS version 9.0+
 - (void)contactsFromContactListCompletionBlock:(ContactsListCompletionBlock)completionBlock;
 
-/// Facebook
-- (void)facebookUserWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock;
-- (void)facebookFriendsListFromSocialFrameworkWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock;
+/// Facebook Social
+- (void)facebookSocialUserWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock;
+- (void)facebookSocialFriendsListWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock;
 - (void)facebookUserImages;
+
+/// Facebook SDK
+- (void)facebookSDKUserWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock;
+- (void)facebookSDKFriendsListWithCompletionBlock:(AccountManagerCompletionBlock)completionBlock;
 
 @end
